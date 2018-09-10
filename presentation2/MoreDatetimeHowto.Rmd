@@ -1,0 +1,79 @@
+---
+title: "More Datetime Howto"
+author: "Jeff Newmiller"
+date: "September 9, 2018"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Other approaches to handling time
+
+Some people think the `POSIXt` approach is too rigid, and try out their own ideas for handling time:
+
+- `chron::chron`
+    * Contributed package, behaves similar to Excel
+    * Internally represented as days since origin date (1970-01-01), a floating point number, including the fractional part!
+- `zoo::yrmon`
+    * Cannot handle increments of less than one month
+    * Internally represented as numeric years, a floating point number, always rounded to nearest 1/12 when displayed
+
+## Detour: Floating Point Error
+
+R FAQ 7.31 warns against depending on exact results when using floating point fractions:
+
+```{r}
+x <- 0.3
+0.6 == 2 * x # works
+0.9 == 3 * x # but you cannot rely on it
+0.9 - 3 * x
+```
+
+This imprecision is not unique to R... this applies to all software that uses floating point numbers.
+
+It is best to use a date/time representation that uses non-fractional values for your application... `Date` if you never use time-of-day, or `POSIXct` if your smallest precision is one second.  If your smallest precision is less than one second, `POSIXt` may introduce rounding errors so it is best to minimize the amount of calculations performed with such timestamps.
+
+## `chron`
+
+- Very similar to Excel time (simple)
+
+```{r,echo=TRUE}
+library(chron)
+dtm1 <- chron( dates. = c( "3/13/2016", "3/13/2016" )
+             , times. = c( "01:00:00", "03:00:00" )
+             )
+dtm1
+as.numeric( dtm1 )
+dtm1[ 1 ] < dtm1[ 2 ]
+diff( dtm1 )
+```
+
+## `chron` Spring Forward
+
+- Does not understand timezones
+- base graphics plotting doesn't display right (ggplot does)
+
+```{r,fig.height=3}
+library(ggplot2)
+dtms1 <- seq( dtm1[ 1 ], dtm1[ 2 ], times( "00:30:00" ) ); dtms1
+qplot( seq_along( dtms1 ), dtms1 ) + chron::scale_y_chron(format="%m/%d/%y %H:%M" )
+```
+
+## `chron` Sequence Rounding
+
+```{r}
+dtm2a <- chron( "02/20/13", "00:00:00" )
+dtm2b <- chron( "07/03/18", "15:30:00" )
+dtm2 <- seq( from=dtm2a, to=dtm2b, by=times( "00:15:00" ) )
+tail( dtm2 )
+length( dtm2 )
+Sys.setenv( TZ="US/Pacific" )
+dtm3a <- as.POSIXct( "02/20/13 00:00:00", format = "%m/%d/%y %H:%M:%S" )
+dtm3b <- as.POSIXct( "07/03/18 15:30:00", format = "%m/%d/%y %H:%M:%S" )
+dtm3 <- seq( from = dtm3a, to=dtm3b, by=as.difftime( 15, units="mins" ) )
+tail( dtm3 )
+length( dtm3 )
+```
+
