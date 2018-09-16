@@ -1,15 +1,18 @@
 ---
 title: "Date-Time Howto"
 author: "Jeff Newmiller"
-date: "September 8, 2018"
+date: "October 2, 2018"
 output: slidy_presentation
 ---
 
 ```{r setup, include=FALSE}
 #knitr::opts_chunk$set(echo = FALSE)
+suppressPackageStartupMessages( library(dplyr) )
+suppressPackageStartupMessages( library(ggplot2) )
+suppressPackageStartupMessages( library(lubridate) )
 ```
 
-## Desirable features for handling date/times
+# Desirable features for handling date/times
 
 - Convert to and from character (format/parse)
 - Compare two dates (before, same time, or after?)
@@ -17,7 +20,202 @@ output: slidy_presentation
 - Create periodic sequences of moments in time
 - Handle calendar/time special cases
 
-## Date-Time Classes
+We will cover these topics "as-needed" by importing a couple of data files.
+
+# Cleaned Residential Data
+
+Sample residential electric load data from London, England[^5] (pre-trimmed to one house and odd records removed)
+
+```{r}
+dta <- read.csv( "../data/MAC000002clean.csv", as.is = TRUE )
+str(dta)
+```
+
+# Base R Timestamp
+
+Tell R to assume timezone is Greenwich Mean Time (or Universal Time Coordinated = UTC)
+
+```{r}
+Sys.setenv( TZ = "GMT" ) # when you don't know how the data was coded, use GMT
+```
+
+Make a `Dtm` column using base R:
+
+```{r}
+dta_b <- dta  # make a copy so we can compare approaches later
+dta_b$Dtm <- as.POSIXct( dta_b$DateTime ) # assumes TZ is set
+str( dta_b$Dtm ) # confirming new column type
+```
+
+`POSIXct` is a time representation that borrows heavily from the _Portable Operating Systems Interface_ (POSIX) standard, which uses integer values to indicate time as the number of seconds since January 1, 1970 Greenwich Mean Time. R uses a double-precision floating point number instead of an integer, but is otherwise very similar to the original standard.
+
+# Aside: Timezones
+
+Excel basically acts like all time is in GMT all the time... if you compute `'2012-03-26' - '2012-03-25'` in Excel you get 1 day (24 hours), even though in London, March 25, 2012 was the beginning of daylight savings time so the day was 23 hours long. For many uses this is fine, but R timestamps always keep timezones in mind so if you *want* to use simplified time in R like you can in Excel then you need to set the timezone to GMT before you do time calculations.
+
+You can set a default timezone for time calculations in a particular R session in the manner of the previous page, or you can set an attribute `"tzone"` on each timezone variable. Timezones affect how the character strings are converted to POSIXct and back to character. It also affects how `POSIXct` <-> `POSIXlt` conversions behave.
+
+```{r}
+dta_b$DtmGMT <- as.POSIXct( dta_b$DateTime, tz = "GMT" )
+attr( dta_b$Dtm, "tzone" )
+attr( dta_b$DtmGMT, "tzone" )
+```
+
+It is not possible to set a separate timezone on individual `POSIXct` elements within a vector.
+
+# Aside 2: `POSIXlt` (List or Long Time)
+
+`POSIXlt` is the base R tool for manipulating the parts of a timestamp:
+
+```{r}
+Sys.setenv( TZ = "UTC" )
+# see ?as.POSIXlt
+dtm2 <- as.POSIXlt( c( "2016-03-13 01:00:00", "2016-03-13 03:00:00" ) )
+dtm2
+dtm2[ 1 ] < dtm2[ 2 ]
+diff( dtm2 )
+```
+
+# Aside 2 continued: `POSIXlt` Internals
+
+See `?DateTimeClasses`. `year` is based from 1900, `mon` represents January as 0, `wday` starts at 0 for Sunday, `yday` starts at 0 for January 1.
+
+```{r}
+str( unclass( dtm2 ) )
+dtm2$year + 1900
+```
+
+# First Data Review
+
+Now for some summary calculations:
+
+```{r}
+d <- as.POSIXlt( dta_b$Dtm ) # keep list time separate from data frame
+dta_b$Hour <- d$hour
+dta_b$wday <- factor( d$wday
+                    , levels = 0:6
+                    , labels = c( "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" )
+                    )
+dta_b$Dt <- as.POSIXct( trunc( d, units="days" ) ) # see ?trunc.POSIXt
+dta_bWday <- aggregate( KWH ~ wday, dta_b, FUN = sum )
+dta_bWday
+```
+
+Greatest residential use occurs on Sundays, likely because that is when most people stay home.
+
+# Creative Plotting (1)
+
+Make hourly data instead of half-hourly:
+
+```{r,fig.height=4}
+library(dplyr)
+dta_bH <- (   dta_b
+          %>% group_by( Dt, Hour, wday )
+          %>% summarise( KWH = sum( KWH ) )
+          )
+head( dta_bH[ as.POSIXct( "2013-03-31" ) == dta_bH$Dt, ] ) # spring forward?
+```
+
+# Creative Plotting (2)
+
+```{r,fig.height=4}
+ggplot( dta_bH, aes( x=Hour, y=Dt, fill=KWH ) ) +
+  geom_raster() +
+  facet_wrap( ~wday )
+```
+
+Note the odd shift to the left around March and shift right around October... this is probably related to daylight savings.
+
+# Creative Plotting (3)
+
+Since the original data had no "spring forward" interval in the timestamps (jump of 0.5 hour record interval + 1 hour transition = 1.5 hours, it was probably in standard time year round, so the time instants are right but the clock interpretation needs to be fixed:
+
+```{r}
+dta_p <- dta_b
+Sys.setenv( TZ = "Europe/London" ) # default assumption for time zones
+# then repeat the timestamp breakdown
+d <- as.POSIXlt( dta_p$Dtm ) # keep list time separate from data frame
+dta_p$Hour <- d$hour
+dta_p$wday <- factor( d$wday, levels = 0:6, labels = c( "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" ) )
+dta_p$Dt <- as.POSIXct( trunc( d, units="days" ) )
+dta_pH <- (   dta_p
+          %>% group_by( Dt, Hour, wday )
+          %>% summarise( KWH = sum( KWH ) )
+          )
+head( dta_pH[ as.POSIXct( "2013-03-31" ) == dta_pH$Dt, ] ) # spring forward for London!
+```
+
+# Creative Plotting (4)
+
+```{r,fig.height=4}
+ggplot( dta_pH, aes( x=Hour, y=Dt, fill=KWH ) ) +
+  geom_raster() +
+  facet_wrap( ~wday )
+```
+
+Their peak energy use tends to occur around 8pm on the civil time clock!
+
+# Multi-column Date/Times
+
+An old solar weather file for San Francisco Airport [^6]:
+
+```{r}
+# download.file( url = "https://rredc.nrel.gov/solar/old_data/nsrdb/1961-1990/hourly/1990/23234_90.txt"
+#              , destfile = "../data/23234_90.txt"
+#              )
+dta3 <- read.fwf( "../data/23234_90.txt", header = FALSE
+                , skip = 1, stringsAsFactors = FALSE
+                , widths = c( 3, 3, 3, 3, 5, 5, 5, 2, 1, 5
+                            , 2, 1, 5, 2, 1 )
+                , na.strings = " 9999"
+                )
+dta3 <- setNames( dta3
+                , c( "Yr", "Mo", "Dy", "Hr", "G_etdir", "G_etdni"
+                   , "G_g", "G_g_src", "G_g_unc", "G_n", "G_n_src"
+                   , "G_n_unc", "G_d", "G_d_src", "G_d_unc"
+                   )
+                )
+str( dta3 )
+```
+
+# Multi-column Date/Times
+
+These files were recorded in "local standard time" (no daylight savings). Could set TZ="GMT" if desired, but here we illustrate what an LST looks like, and show how to convert multiple numeric columns into a timestamp using `ISOdatetime`:
+
+```{r,warning=FALSE,fig.height=4}
+Sys.setenv( TZ = "Etc/GMT+8" ) # yes, that is plus, backwards from current practice
+dta3$Dtm <- with( dta3, ISOdatetime( Yr + 1900, Mo, Dy, Hr, 0, 0 ) )
+ggplot( dta3, aes( x=Dtm, y=G_g ) ) + geom_line( size=0.2, alpha=0.5 )
+```
+
+# Dates and Times
+
+Yet another old source of solar data [^7]:
+
+```{r}
+# download.file( "https://rredc.nrel.gov/solar/old_data/nsrdb/1991-2010/data/hourly/724940/724940_2010_solar.csv"
+#              , destfile = "../data/724940_2010_solar.csv"
+#              )
+dta4 <- read.csv( "../data/724940_2010_solar.csv", check.names = FALSE
+                , as.is = TRUE, na.strings = "-9900" )
+str( dta4 )
+```
+
+# Dates and Times (2)
+
+The `Date` type is convenient if you don't need to worry about time, but beware of comparing or calculating between `Date` and `POSIXct`:
+
+```{r}
+Sys.setenv(TZ = "Etc/GMT+8" )
+dta4$Dt <- as.Date( dta4$`YYYY-MM-DD` )
+dta4$Dtm <- as.POSIXct( paste( dta4$`YYYY-MM-DD`, dta4$`HH:MM (LST)` ) )
+head( dta4[ , c( "YYYY-MM-DD", "HH:MM (LST)", "Dt", "Dtm" ) ] )
+dta4$Dtm[ 1 ] - as.POSIXct( dta4$Dt[ 1 ] )
+```
+
+When a `Date` value is converted to `POSIXct`, it is *always* treated as if it was in GMT timezone! If you need a midnight-date that can be compared/subtracted with `POSIXct` intuitively then use `as.POSIXct( trunc( Dtm ) )`. Also avoid mixing variables created with `ISOdate` and `ISOdatetime` for the same reason.
+
+# Date-Time Classes
 
 These are introduced in the help page `?DateTimeClasses` and were discussed in R News 2004-4[^2]:
 
@@ -34,7 +232,7 @@ These are introduced in the help page `?DateTimeClasses` and were discussed in R
     
 Note that base R does not support working with time-of-day only, since the length of a day can be different in different timezones and/or on different calendar days.
 
-## `Date` (No Time)
+# `Date` (No Time)
 
 ```{r}
 Sys.setenv( TZ = "UTC" )
@@ -46,7 +244,7 @@ dt1a < dt1b
 dt1b - dt1a
 ```
 
-## `POSIXct` (Continuous or Compact Time)
+# `POSIXct` (Continuous or Compact Time)
 
 Most flexible for computing with instants of time. Can represent precision of smaller than one second, but results may be unreliable due to floating point rounding.
 
@@ -59,7 +257,7 @@ dtm1[ 1 ] < dtm1[ 2 ]
 diff( dtm1 )
 ```
 
-## `POSIXlt` (List or Long Time)
+# `POSIXlt` (List or Long Time)
 
 ```{r}
 Sys.setenv( TZ = "UTC" )
@@ -70,7 +268,7 @@ dtm2[ 1 ] < dtm2[ 2 ]
 diff( dtm2 )
 ```
 
-## `POSIXlt` Internals
+# `POSIXlt` Internals
 
 See `?DateTimeClasses`. `year` is based from 1900, `mon` represents January as 0, `wday` starts at 0 for Sunday, `yday` starts at 0 for January 1.
 
@@ -79,7 +277,7 @@ str( unclass( dtm2 ) )
 dtm2$year + 1900
 ```
 
-## `difftime` for Durations
+# `difftime` for Durations
 
 The amount of time between two points in time is treated differently than the points in time themselves. You cannot add two `POSIXct` values, but you can add a `POSIXct` with as many `difftime` values as desired.
 
@@ -89,7 +287,7 @@ dtm1[ 1 ] + diftm1
 dtm1[ 1 ] + as.difftime( 2, units="weeks" )
 ```
 
-## `difftime` Numeric Equivalent
+# `difftime` Numeric Equivalent
 
 If you need to know the value of a difftime you must remember to specify the units or you may get whatever "convenient" units R wants to use:
 
@@ -99,9 +297,9 @@ as.numeric( diftm1, units="mins" )
 as.numeric( diftm1, units="secs" )
 ```
 
-## Timezones (1)
+# Timezones (1)
 
-Time zones are identified using string labels that are technically OS-dependent, but for Windows/Mac/Linux the Olson database is used so this is fairly widely applicable [^https://en.wikipedia.org/wiki/List_of_tz_database_time_zones].
+Time zones are identified using string labels that are technically OS-dependent, but for Windows/Mac/Linux the Olson database is used so this is fairly widely applicable [^8].
 
 ```{r}
 on <- OlsonNames()
@@ -109,7 +307,9 @@ tail( on ) # a few examples
 grep( "Los_Angeles", on, value=TRUE )
 ```
 
-## Timezones (2)
+Note that even though sometimes R will use a 3-letter timezone abbreviation, such shorthand is usually not acceptable for _specifying_ the timezone.
+
+# Timezones (2)
 
 No matter what timezone you use, the underlying numeric value of a `POSIXct` will be assumed to count from the origin instant in GMT.
 
@@ -119,7 +319,7 @@ Converting `Date` to `POSIXct` *always* treats the date as beginning of the day 
 
 Note that each vector of `POSIXct` can have its own timezone, but some functions can cause that timezone to get lost, or will create time values internally using the default (TZ) timezone, so it is simplest to change the TZ as needed while doing input, then use some single timezone of your choosing while doing calculations and generating output. 
 
-## `lubridate` package (1)
+# `lubridate` package (1)
 
 The `lubridate`[^3] package provides many "helper" functions for working with `POSIXct` and `Date` values.
 
@@ -129,22 +329,24 @@ mdy( "3/14/2013" ) == as.Date( "3/14/2013", format="%m/%d/%Y" )
 dmy_hms( "14/3/13 1:15:45" ) == as.POSIXct( "14/3/13 1:15:45", format = "%d/%m/%y %H:%M:%S")
 ```
 
-## `lubridate` package (2)
+# `lubridate` package (2)
 
 You can repair a time value that was converted to POSIXct with the wrong timezone:
 
 ```{r}
 dtm1[ 1 ]
-force_tz( dtm1[ 1 ], "US/Pacific" ) # this is a different point in time
+force_tz( dtm1, "US/Pacific" ) # this is a different point in time
 ```
 
 Or you can display a given instant of time using  a different timezone:
 
 ```{r}
-with_tz( dtm1[ 1 ], "US/Pacific" )
+with_tz( dtm1, "US/Pacific" )
+# which is easier to remember than
+# attr( dtm1, "tzone" ) <- "US/Pacific"
 ```
 
-## `lubridate` package (3)
+# `lubridate` package (3)
 
 Three additional ways beyond `difftime` to represent time intervals are also provided:
 
@@ -155,158 +357,18 @@ dtm1PT + days( 1 ) # add a 1 day period (acts like a calendar)
 dtm1PT + ddays( 1 ) # add a 1 day duration (much like difftime(1,units="days"))
 ```
 
-There is a cheat sheet summary of `lubridate` functions.[^4]
+There exists a cheat sheet summary of `lubridate` functions.[^4]
 
-## Importing Timestamped Data (1)
-
-Sample residential electric load data from London, England[^5] (trimmed for this example)
-
-```{r}
-dta <- read.csv( "../data/MAC000002.csv", as.is = TRUE, check.names = FALSE )
-str(dta)
-```
-
-The energy column is still character because of the leading spaces...
-
-## Importing Timestamped Data (2)
-
-The `trimws` base R function can clean up the energy column:
-
-```{r}
-dta$KWH <- as.numeric( trimws( dta$`KWH/hh (per half hour)` ) )
-str( dta )
-sum( is.na( dta$KWH ) )
-```
-
-
-## Importing Timestamped Data (3)
-
-Using base R (uses less extra memory, faster to execute, but not as convenient)
-
-```{r}
-dta_b <- dta  # so we can compare methods later
-Sys.setenv( TZ = "GMT" ) # start out by assuming it is simple
-dta_b$Dtm <- as.POSIXct( dta_b$DateTime ) # for sanity checks
-unique( as.numeric( diff( dta_b$Dtm ), units="hours" ) )
-```
-
-Can tell there are some some missing records (1.0, 25.5), duplicates (0.00) 
-and non-half-hour timestamps (0.124, 0.375). Note there are no reversed time sequences (negative differences).
-
-## Importing Timestamped Data (4)
-
-```{r,fig.height=4}
-library(ggplot2)
-dtmdif <- as.numeric( diff( dta_b$Dtm ), units="hours" )
-qplot( dta_b$Dtm[ -nrow( dta_b ) ], dtmdif, geom = "line", xlab="Time", ylab = "Difftime (hours)" )
-```
-
-Seems to have occasional one-hour jumps (skipped record), and more regular duplicate records.
-
-## Importing Timestamped Data (5)
-
-Review records with the same timestamp (duplicated function only marks the second and following instances)
-
-```{r}
-dupidx <- which( duplicated( dta_b$Dtm ) ) # get integer indexes where duplicated is true
-dta_b[ dta_b$Dtm %in% dta_b$Dtm[ dupidx ], ][ 1:6, ]
-```
-
-Seems alright to remove timestamp duplicates because KWH is also duplicated.
-
-## Importing Timestamped Data (6)
-
-Remove rows where all fields are the same by referring only to the data frame `duplicated(dta_b)`:
-
-```{r,fig.height=4}
-dta_b2 <- dta_b[ !duplicated( dta_b ), ]
-dtmdif2 <- as.numeric( diff( dta_b2$Dtm ), units="hours" )
-qplot( dta_b2$Dtm[ -nrow( dta_b2 ) ], dtmdif2, geom = "line", xlab="Time", ylab = "Difftime (hours)" )
-```
-
-Still one too-small difference...
-
-## Importing Timestamped Data (7)
-
-```{r}
-smalldifidx <- which( dtmdif2 < 0.5 )
-smalldifidx
-dta_b2[ 3237:3240, ]
-```
-
-Extra record between two valid records, can remove it.
-
-## Importing Timestamped Data (8)
-
-```{r,fig.height=4}
-dta_b3 <- dta_b2[ -3239, ]
-dtmdif3 <- as.numeric( diff( dta_b3$Dtm ), units="hours" )
-qplot( dta_b3$Dtm[ -nrow( dta_b3 ) ], dtmdif3, geom = "line", xlab="Time", ylab = "Difftime (hours)" )
-```
-
-## Importing Timestamped Data (9)
-
-Looking good, now for some summary calculations:
-
-```{r}
-d <- as.POSIXlt( dta_b3$Dtm ) # keep list time separate from data frame
-dta_b3$Hour <- d$hour
-dta_b3$wday <- factor( d$wday, levels = 0:6, labels = c( "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" ) )
-dta_b3$Dt <- as.POSIXct( trunc( d, units="days" ) )
-dta_b3Wday <- aggregate( KWH ~ wday, dta_b3, FUN = sum )
-dta_b3Wday
-```
-
-Highest residential use on Sundays, likely because that is when most people stay home.
-
-## Creative Plotting (1)
-
-```{r,fig.height=4}
-suppressPackageStartupMessages( library(dplyr) )
-dta_b3H <- (   dta_b3
-           %>% group_by( Dt, Hour, wday )
-           %>% summarise( KWH = sum( KWH ) )
-           )
-ggplot( dta_b3H, aes( x=Hour, y=Dt, fill=KWH ) ) +
-  geom_raster() +
-  facet_wrap( ~wday )
-```
-
-Note the odd shift to the left around March and shift right around October... this is probably related to daylight savings.
-
-## Creative Plotting (2)
-
-Since the original data had no "spring forward" by 0.5+1=1.5 hours, it was likely in standard time year round, so the time instants are right but the clock interpretation needs to be fixed:
-
-```{r}
-dta_b4 <- dta_b3
-dta_b4$Dtm <- with_tz( dta_b4$Dtm, "Europe/London" ) # same time instant, different interpretation
-# then repeat the timestamp breakdown
-d <- as.POSIXlt( dta_b4$Dtm ) # keep list time separate from data frame
-dta_b4$Hour <- d$hour
-dta_b4$wday <- factor( d$wday, levels = 0:6, labels = c( "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" ) )
-dta_b4$Dt <- as.POSIXct( trunc( d, units="days" ) )
-dta_b4H <- (   dta_b4
-           %>% group_by( Dt, Hour, wday )
-           %>% summarise( KWH = sum( KWH ) )
-           )
-```
-
-## Creative Plotting (3)
-
-```{r,fig.height=4}
-ggplot( dta_b4H, aes( x=Hour, y=Dt, fill=KWH ) ) +
-  geom_raster() +
-  facet_wrap( ~wday )
-```
-
-Rather habitual energy user around 8pm!
-
-## Conclusion
+# Conclusion
 
 - Best to use `Date` and `POSIXct`
 - Always set `TZ` before using time functions!
-- `lubridate` is convenient for working with times, but slower than using `POSIXlt` directly
+    + If you don't know the correct timezone, you can often get along by just pretending it is in "GMT".
+    + The available list of timezones can be obtained using the `OlsonNames()` function
+- `lubridate` is convenient for working with times, but less efficient than using `POSIXlt` directly
+- Avoid converting `POSIXct` directly to numeric... it is unnecessary in most cases and makes your time manipulations overly-complicated
+    + It is fine to convert `difftime` to and from numeric... just remember to specify the units in both conversion directions
+- Use `sum( is.na( Dtm ) )` to check if invalid date/times were present. These may indicate incorrect timezone assumptions (including failure to set `TZ`) if they occur in the daylight-savings-time spring-forward hour.
 
 ---
 [^1]: M. J. Crawley, _Statistics: an introduction using R_, 1st ed. Chichester, West Sussex, England: J. Wiley, 2005.
@@ -314,3 +376,6 @@ Rather habitual energy user around 8pm!
 [^3]: G. Grolemund and H. Wickham, “Dates and Times Made Easy with lubridate,” Journal of Statistical Software, vol. 40, no. 3, pp. 1–25, 2011 [Online]. Available: http://www.jstatsoft.org/v40/i03/
 [^4]: “Dates and times with lubridate :: CHEAT SHEET.” RStudio, Dec-2017 [Online]. Available: https://github.com/rstudio/cheatsheets/raw/master/lubridate.pdf
 [^5]: https://data.london.gov.uk/dataset/smartmeter-energy-use-data-in-london-households
+[^6]: *NSRDB 1961-1990: Hourly Data Files*, https://rredc.nrel.gov/solar/old_data/nsrdb/1961-1990/
+[^7]: *National Solar Radiation Data Base 1991- 2010 Update*, https://rredc.nrel.gov/solar/old_data/nsrdb/1991-2010/
+[^8]: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones

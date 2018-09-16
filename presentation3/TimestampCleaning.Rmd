@@ -1,0 +1,153 @@
+---
+title: "Timestamp Cleaning"
+author: "Jeff Newmiller"
+date: "September 15, 2018"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE)
+suppressPackageStartupMessages( library(dplyr) )
+suppressPackageStartupMessages( library(ggplot2) )
+suppressPackageStartupMessages( library(lubridate) )
+```
+
+## Topic
+
+Often there are missing records, duplicated records, and records with unexpected content (e.g. the string `Null` in a column of numbers). The following steps describe preparing the input data to be used for the October 2018 lightning talk.
+
+## Residential Electricity Usage
+
+Sample residential electric load data from London, England[^5] (pre-trimmed to one house)
+
+```{r}
+dta <- read.csv( "../data/MAC000002.csv"
+               , as.is = TRUE # don't convert character to factor
+               , check.names = FALSE # don't replace odd characters in column names
+               )
+str(dta)
+```
+
+The timestamp column is stored as character data because read.csv does not automatically recognize timestamps. 
+
+## Base R Timestamp
+
+Tell R to assume timezone is Greenwich Mean Time (or Universal Time Coordinated = UTC)
+
+```{r}
+Sys.setenv( TZ = "GMT" ) # when you don't know how the data was coded, use GMT
+```
+
+Make a `Dtm` column using base R (works without extra packages, but not as convenient)
+
+```{r}
+dta_b <- dta  # make a copy so we can compare methods later
+dta_b$Dtm <- as.POSIXct( dta_b$DateTime )
+str( dta_b$Dtm ) # confirming new column type
+```
+
+## Check Consistency of Intervals (1)
+
+Sometimes there are missing records, so being able to calculate how much time elapsed between records is useful. The `diff` function subtracts consecutive values in a vector:
+
+```{r}
+head( diff( dta_b$Dtm ) )
+```
+
+## Check Consistency of Intervals (2)
+
+Note the special label telling you what units the difference is in... R may sometimes choose minutes, hours or days which is fine for people but can be confusing if you let the computer work with that answer.
+
+```{r}
+head( as.numeric( diff( dta_b$Dtm ) 
+                , units="mins" # convert from "whatever" to "minutes"
+                ) 
+      )
+```
+
+## Check Consistency of Intervals (3)
+
+Lets ask R to look through all 24 thousand time differences to see if there are non-30-minute intervals:
+
+```{r}
+table( as.numeric( diff( dta_b$Dtm ), units="mins" ) )
+```
+
+Although most of the intervals are 30 minutes, we can see that there are some some missing records (60, 1470), duplicates (0) and non-half-hour timestamps (7.45, 22.55). Note there are no reversed time sequences (negative differences).
+
+## Check Consistency of Intervals (4)
+
+```{r,fig.height=4}
+library(ggplot2)
+dtmdif <- as.numeric( diff( dta_b$Dtm ), units="hours" )
+qplot( dta_b$Dtm[ -nrow( dta_b ) ], dtmdif, geom = "line", xlab="Time", ylab = "Difftime (hours)" )
+```
+
+Seems to have occasional one-hour jumps (skipped record), and more regular duplicate records.
+
+## Find Misleading Timestamps
+
+Review records with the same timestamp (duplicated function only marks the second and following instances)
+
+```{r}
+dupidx <- which( duplicated( dta_b$Dtm ) ) # get integer indexes where duplicated is true
+head( dta_b[ dta_b$Dtm %in% dta_b$Dtm[ dupidx ], ] )
+```
+
+Seems alright to remove timestamp duplicates because KWH is also duplicated.
+
+## Remove Misleading Timestamps
+
+Remove rows where all fields are the same by referring only to the data frame `duplicated(dta_b)`:
+
+```{r,fig.height=4}
+dta_b2 <- dta_b[ !duplicated( dta_b ), ]
+dtmdif2 <- as.numeric( diff( dta_b2$Dtm ), units="hours" )
+qplot( dta_b2$Dtm[ -nrow( dta_b2 ) ], dtmdif2, geom = "line", xlab="Time", ylab = "Difftime (hours)" )
+```
+
+Still one too-small difference...
+
+## Find Misleading Timestamps (2)
+
+```{r}
+smalldifidx <- which( dtmdif2 < 0.5 )
+smalldifidx
+dta_b2[ 3237:3240, ]
+```
+
+Extra record between two valid records, can remove it.
+
+## Remove Misleading Timestamps (2)
+
+```{r,fig.height=4}
+dta_b3 <- dta_b2[ -3239, ]
+dtmdif3 <- as.numeric( diff( dta_b3$Dtm ), units="hours" )
+qplot( dta_b3$Dtm[ -nrow( dta_b3 ) ]
+     , dtmdif3
+     , geom = "line"
+     , xlab="Time"
+     , ylab = "Difftime (hours)" )
+```
+
+## Fix Numeric Data
+
+The energy column should be numeric but is still stored as character data because when it was read in there were extra spaces around the numbers and the `Null` value record that we deleted. The `trimws` base R function can clean up the energy column:
+
+```{r}
+dta_b3$KWH <- as.numeric( trimws( dta_b3$`KWH/hh (per half hour)` ) )
+str( dta_b3 )
+sum( is.na( dta_b3$KWH ) )
+```
+
+
+## Save Cleaned Residential Data
+
+```{r}
+write.csv( dta[ , c( "LCLid", "DateTime", "KWH" ) ]
+         , file = "../data/MAC000002clean.csv"
+         , row.names = FALSE
+         , quote = FALSE
+         )
+```
+
