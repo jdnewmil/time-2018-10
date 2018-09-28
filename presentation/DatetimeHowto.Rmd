@@ -3,14 +3,87 @@ title: "Date-Time Howto"
 author: "Jeff Newmiller"
 date: "October 2, 2018"
 output: slidy_presentation
+css: ../css/custom.css
 ---
 
 ```{r setup, include=FALSE}
-#knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.height = 4)
 suppressPackageStartupMessages( library(dplyr) )
 suppressPackageStartupMessages( library(ggplot2) )
 suppressPackageStartupMessages( library(lubridate) )
 ```
+
+# Date/Time FAQs
+
+Will show examples of fixing common time-related problems:
+
+- Date/Time values make messy plots?
+- Invalid Date/Time values?
+- Handling daylight savings time?
+- Time in a series of columns?
+- Comparing Dates and Date/Times?
+
+# Q: Date/Time values make messy plots?
+
+Why do the following simple commands make such messy x-axis labeling? And it is slow, too!
+
+```{r}
+dta <- read.csv( "../data/MAC000002clean.csv" )
+str(dta)
+plot( dta$DateTime, dta$KWH, pch = "." )
+```
+
+# A: Use `Date` or `POSIXct` for date/time values
+
+```{r,include=FALSE}
+Sys.setenv( TZ = "US/Pacific" )
+```
+
+```{r}
+dta <- read.csv( "../data/MAC000002clean.csv", as.is=TRUE ) # avoid auto-convert to factor
+dta$Dtm <- as.POSIXct( dta$DateTime )
+# or just
+# dta <- readr::read_csv( "../data/MAC000002clean.csv" )
+str(dta)
+plot( dta$Dtm, dta$KWH, pch = "." )
+```
+
+# Useful Date/Time Data Types in R
+
+```{r,echo=FALSE,results='asis'}
+Sys.setenv( TZ = "GMT" )
+s <- capture.output( str( unclass( as.POSIXlt( "2013-03-31 03:30:00" ) ) ) )
+dtminfo <- data.frame( Item = c( "from chr", "to chr", "implementation", "units" )
+                     , `Date` = c( '`as.Date( "2013-03-31" )`'
+                                 , '`as.character( Dt )`'
+                                 , sprintf( "%.1f", unclass( as.Date( "2013-03-31" ) ) )
+                                 , 'days since `1970-01-01 GMT`'
+                                 )
+                     , `POSIXct` = c( '`as.POSIXct( "2013-03-31 03:30:00" )`'
+                                    , '`as.character( Dtm )`'
+                                    , sprintf( "%.1f", unclass( as.POSIXct( "2013-03-31 03:30:00" ) ) )
+                                    , 'sec since `1970-01-01 00:00:00 GMT`'
+                                    )
+                     , POSIXlt = c( '`as.POSIXlt( "2013-03-31 03:30:00" )`'
+                                  , '`as.character( Dtm )`'
+                                  , paste( paste0( "`", s, "`" ), collapse = "<br/>" )
+                                  , 'separate units for each of 9 elements'
+                                  )
+                     )
+
+knitr::kable( dtminfo
+            , format="html"
+            , escape=FALSE
+            , col.names = c( "Item", "`Date`", "`POSIXct`", "`POSIXlt`")
+            )
+```
+
+# Q: Invalid Date/Time values?
+
+```{r}
+sum( is.na( dta$DateTime ) )
+```
+
 
 # Desirable features for handling date/times
 
@@ -39,7 +112,7 @@ Tell R to assume timezone is Greenwich Mean Time (or Universal Time Coordinated 
 Sys.setenv( TZ = "GMT" ) # when you don't know how the data was coded, use GMT
 ```
 
-Make a `Dtm` column using base R:
+Make a `Dtm` column using base R. The "%Y-%m-%d %H:%M:%OS" format works by default, but many common formats need to be specified with a `format` argument (`?strptime`).
 
 ```{r}
 dta_b <- dta  # make a copy so we can compare approaches later
