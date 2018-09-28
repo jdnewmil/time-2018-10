@@ -144,7 +144,7 @@ sum( is.na( dta_b3$KWH ) )
 ## Save Cleaned Residential Data
 
 ```{r}
-write.csv( dta[ , c( "LCLid", "DateTime", "KWH" ) ]
+write.csv( dta_b3[ , c( "LCLid", "DateTime", "KWH" ) ]
          , file = "../data/MAC000002clean.csv"
          , row.names = FALSE
          , quote = FALSE
