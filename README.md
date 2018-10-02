@@ -7,6 +7,13 @@ These materials were prepared for a meeting of the East Bay R Beginners Meetup G
 ### To build the main presentation using RStudio:
 
 - Open the "time-2018-10.Rproj" project file with RStudio
+- Confirm you have/install all of the requisite packages from CRAN (`install.packages` or use the Packages pane):
+    + `dplyr`
+    + `ggplot2`
+    + `lubridate`
+    + `knitr`
+    + `DiagrammeR`
+    + `rmarkdown`
 - Use the Console pane to type in the command
 ```
 setwd( "presentation" )

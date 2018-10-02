@@ -1,5 +1,5 @@
 ---
-title: "Other Datetime Approaches"
+title: "More Datetime Howto"
 author: "Jeff Newmiller"
 date: "September 9, 2018"
 output: slidy_presentation
@@ -10,7 +10,225 @@ output: slidy_presentation
 suppressPackageStartupMessages( library(zoo) )
 ```
 
-## Other approaches to handling time
+# Desirable features for handling date/times
+
+- Convert to and from character (format/parse)
+- Compare two dates (before, same time, or after?)
+- Calculate interval between two moments in time
+- Create periodic sequences of moments in time
+- Handle calendar/time special cases
+
+# Cleaned Residential Data
+
+Sample residential electric load data from London, England[^5] (pre-trimmed to one house and odd records removed)
+
+```{r}
+dta <- read.csv( "../data/MAC000002clean.csv", as.is = TRUE )
+str(dta)
+```
+
+# Base R Timestamp
+
+Tell R to assume timezone is Greenwich Mean Time (or Universal Time Coordinated = UTC)
+
+```{r}
+Sys.setenv( TZ = "GMT" ) # when you don't know how the data was coded, use GMT to get started
+```
+
+Make a `Dtm` column using base R. The "%Y-%m-%d %H:%M:%OS" format works by default, but many common formats need to be specified with a `format` argument (`?strptime`).
+
+```{r}
+dta_b <- dta  # make a copy so we can compare approaches later
+dta_b$Dtm <- as.POSIXct( dta_b$DateTime ) # assumes TZ is set
+str( dta_b$Dtm ) # confirming new column type
+```
+
+`POSIXct` is a time representation that borrows heavily from the _Portable Operating Systems Interface_ (POSIX) standard, which uses integer values to indicate time as the number of seconds since January 1, 1970 Greenwich Mean Time. R uses a double-precision floating point number instead of an integer, but is otherwise very similar to the original standard.
+
+# Aside: Timezones
+
+Excel basically acts like all time is in GMT all the time... if you compute `'2012-03-26' - '2012-03-25'` in Excel you get 1 day (24 hours), even though in London, March 25, 2012 was the beginning of daylight savings time so the day was 23 hours long. For many uses this is fine, but R timestamps always keep timezones in mind so if you *want* to use simplified time in R like you can in Excel then you need to set the timezone to GMT before you do time calculations.
+
+You can set a default timezone for time calculations in a particular R session in the manner of the previous page, or you can set an attribute `"tzone"` on each timezone variable. Timezones affect how the character strings are converted to POSIXct and back to character. It also affects how `POSIXct` <-> `POSIXlt` conversions behave.
+
+```{r}
+dta_b$DtmGMT <- as.POSIXct( dta_b$DateTime, tz = "GMT" )
+attr( dta_b$Dtm, "tzone" )
+attr( dta_b$DtmGMT, "tzone" )
+```
+
+It is not possible to set a separate timezone on individual `POSIXct` elements within a vector.
+
+# Aside 2: `POSIXlt` (List or Long Time)
+
+`POSIXlt` is the base R tool for manipulating the parts of a timestamp:
+
+```{r}
+Sys.setenv( TZ = "UTC" )
+# see ?as.POSIXlt
+dtm2 <- as.POSIXlt( c( "2016-03-13 01:00:00", "2016-03-13 03:00:00" ) )
+dtm2
+dtm2[ 1 ] < dtm2[ 2 ]
+diff( dtm2 )
+```
+
+# Aside 2 continued: `POSIXlt` Internals
+
+See `?DateTimeClasses`.
+
+`year` is based from 1900, `mon` represents January as 0, `wday` starts at 0 for Sunday, `yday` starts at 0 for January 1.
+
+```{r}
+str( unclass( dtm2 ) )
+dtm2$year + 1900
+```
+
+
+# Date-Time Classes
+
+These are introduced in the help page `?DateTimeClasses` and were discussed in R News 2004-4[^2]:
+
+- `Date`
+    * Cannot handle increments of less than one day
+    * Internally represented as days since origin date (1970-01-01), a floating point number, fractions ignored
+- `POSIXct` (Continuous Time[^1])
+    * Very powerful, some people find these intimidating
+    * Internally represented as seconds since origin (1970-01-01 00:00:00.000000 GMT), a floating point number, fractions allowed
+    * Recommended for general use (set TZ!)
+- `POSIXlt` (List Time[^1])
+    * Useful for picking apart date/times
+    * Internally represented as a list of nine named numeric vectors: sec, min, hour,  mday, mon, year, wday, yday, isdst. Should not be used in data frames.
+    
+Note that base R does not support working with time-of-day only, since the length of a day can be different in different timezones and/or on different calendar days.
+
+# `Date` (No Time)
+
+```{r}
+Sys.setenv( TZ = "UTC" )
+dt1a <- as.Date( "2013-03-13" ) # see ?as.Date
+dt1b <- as.Date( "3/21/2013", format="%m/%d/%Y" ) # see ?strptime
+dt1b
+as.numeric( dt1b )
+dt1a < dt1b
+dt1b - dt1a
+```
+
+# `POSIXct` (Continuous or Compact Time)
+
+Most flexible for computing with instants of time. Can represent precision of smaller than one second, but results may be unreliable due to floating point rounding.
+
+```{r}
+Sys.setenv( TZ = "UTC" )
+dtm1 <- as.POSIXct( c( "2016-03-13 01:00:00", "2016-03-13 03:00:00" ) )
+dtm1
+as.numeric( dtm1 )
+dtm1[ 1 ] < dtm1[ 2 ]
+diff( dtm1 )
+```
+
+# `POSIXlt` (List or Long Time)
+
+```{r}
+Sys.setenv( TZ = "UTC" )
+# see ?as.POSIXlt
+dtm2 <- as.POSIXlt( c( "2016-03-13 01:00:00", "2016-03-13 03:00:00" ) )
+dtm2
+dtm2[ 1 ] < dtm2[ 2 ]
+diff( dtm2 )
+```
+
+# `POSIXlt` Internals
+
+See `?DateTimeClasses`. `year` is based from 1900, `mon` represents January as 0, `wday` starts at 0 for Sunday, `yday` starts at 0 for January 1.
+
+```{r}
+str( unclass( dtm2 ) )
+dtm2$year + 1900
+```
+
+# `difftime` for Durations
+
+The amount of time between two points in time is treated differently than the points in time themselves. You cannot add two `POSIXct` values, but you can add a `POSIXct` with as many `difftime` values as desired.
+
+```{r}
+diftm1 <- as.difftime( 30, units="mins" ) # see ?as.difftime
+dtm1[ 1 ] + diftm1 
+dtm1[ 1 ] + as.difftime( 2, units="weeks" )
+```
+
+# `difftime` Numeric Equivalent
+
+If you need to know the value of a difftime you must remember to specify the units or you may get whatever "convenient" units R wants to use:
+
+```{r}
+as.numeric( diftm1 ) # not recommended
+as.numeric( diftm1, units="mins" )
+as.numeric( diftm1, units="secs" )
+```
+
+# Timezones (1)
+
+Time zones are identified using string labels that are technically OS-dependent, but for Windows/Mac/Linux the Olson database is used so this is fairly widely applicable [^8].
+
+```{r}
+on <- OlsonNames()
+tail( on ) # a few examples
+grep( "Los_Angeles", on, value=TRUE )
+```
+
+Note that even though sometimes R will use a 3-letter timezone abbreviation when _displaying_ a datetime value, such shorthand is usually not acceptable for _specifying_ the timezone.
+
+# Timezones (2)
+
+No matter what timezone you use, the underlying numeric value of a `POSIXct` will be assumed to count from the origin instant in GMT.
+
+If you don't have any reason to be concerned with timezones in your data, you can make life  "easy" for yourself by setting your working timezone to be "GMT" or "UTC". 
+
+Converting `Date` to `POSIXct` *always* treats the date as beginning of the day in GMT, so if you use any other timezone for other values then  you will want to "force" the timezone to be compatible with any other `POSIXct` values you may be working with.
+
+Note that each vector of `POSIXct` can have its own timezone, but some functions can cause that timezone to get lost, or will create time values internally using the default (TZ) timezone, so it is simplest to change the TZ as needed while doing input, then use some single timezone of your choosing while doing calculations and generating output. 
+
+# `lubridate` package (1)
+
+The `lubridate`[^3] package provides many "helper" functions for working with `POSIXct` and `Date` values.
+
+```{r}
+library(lubridate)
+mdy( "3/14/2013" ) == as.Date( "3/14/2013", format="%m/%d/%Y" )
+dmy_hms( "14/3/13 1:15:45" ) == as.POSIXct( "14/3/13 1:15:45", format = "%d/%m/%y %H:%M:%S")
+```
+
+# `lubridate` package (2)
+
+You can repair a time value that was converted to POSIXct with the wrong timezone:
+
+```{r}
+dtm1[ 1 ]
+force_tz( dtm1, "US/Pacific" ) # this is a different point in time
+```
+
+Or you can display a given instant of time using  a different timezone:
+
+```{r}
+with_tz( dtm1, "US/Pacific" )
+# which is easier to remember than
+# attr( dtm1, "tzone" ) <- "US/Pacific"
+```
+
+# `lubridate` package (3)
+
+Three additional ways beyond `difftime` to represent time intervals are also provided:
+
+```{r}
+interval( dtm1[ 1 ], dtm1[ 2 ] ) # a very specific interval of time
+dtm1PT <- force_tz( dtm1[ 1 ], "US/Pacific" )
+dtm1PT + days( 1 ) # add a 1 day period (acts like a calendar)
+dtm1PT + ddays( 1 ) # add a 1 day duration (much like difftime(1,units="days"))
+```
+
+There exists a cheat sheet summary of `lubridate` functions.[^4]
+
+# Other approaches to handling time
 
 Some people think the `POSIXt` approach is too rigid, and try out their own ideas for handling time:
 
@@ -21,9 +239,9 @@ Some people think the `POSIXt` approach is too rigid, and try out their own idea
     * Cannot handle increments of less than one month
     * Internally represented as numeric years, a floating point number, always rounded to nearest 1/12 when displayed
 
-## Detour: Floating Point Error
+# Detour: Floating Point Error
 
-R FAQ 7.31[^1] warns against depending on exact results when using floating point fractions:
+R FAQ 7.31[^7] warns against depending on exact results when using floating point fractions:
 
 ```{r}
 x <- 0.3     # floating point is always approximate
@@ -31,7 +249,7 @@ x <- 0.3     # floating point is always approximate
 0.9 == 3 * x # but you cannot rely on it
 ```
 
-## Detour: Floating Point Error
+# Detour: Floating Point Error
 
 Why not equal?
 
@@ -43,7 +261,7 @@ Error in `0.3` has become three times larger, but error in `0.9` is about the sa
 
 This imprecision is not unique to R... this applies to all software that uses floating point numbers.
 
-## Detour: Floating Point Error
+# Detour: Floating Point Error
 
 It is best to use a date/time representation that uses non-fractional values for your application...
 
@@ -52,7 +270,7 @@ It is best to use a date/time representation that uses non-fractional values for
 
 If your smallest precision is less than one second, `POSIXt` may introduce rounding errors so it is best to minimize the amount of calculations performed with such timestamps.
 
-## `chron`
+# `chron`
 
 - Very similar to Excel time (simple)
 
@@ -64,7 +282,7 @@ dtm1 <- chron( dates. = c( "3/13/2016", "3/13/2016" )
 dtm1  # automatically formatted for display
 ```
 
-## `chron` Internal Representation
+# `chron` Internal Representation
 
 See what R is storing without the automatic formatting:
 
@@ -72,14 +290,14 @@ See what R is storing without the automatic formatting:
 unclass( dtm1 )
 ```
 
-## `chron` Comparison
+# `chron` Comparison
 
 ```{r}
 dtm1[ 1 ] < dtm1[ 2 ]
 diff( dtm1 )
 ```
 
-## `chron` Spring Forward
+# `chron` Spring Forward
 
 - Does not understand timezones
 - Plotting
@@ -91,7 +309,7 @@ library(ggplot2)
 dtms1 <- seq( dtm1[ 1 ], dtm1[ 2 ], times( "00:30:00" ) ); dtms1
 ```
 
-## `chron` Spring Forward
+# `chron` Spring Forward
 
 ```{r,fig.height=3,fig.width=6}
 Sys.setenv( TZ = "GMT" )
@@ -99,7 +317,7 @@ qplot( seq_along( dtms1 ), dtms1 ) +
   chron::scale_y_chron( format="%m/%d/%y %H:%M" )
 ```
 
-## `chron` Sequence Rounding
+# `chron` Sequence Rounding
 
 ```{r}
 dtm2a <- chron( "02/20/13", "00:00:00" )
@@ -109,7 +327,7 @@ tail( dtm2 ) # stops one value too soon
 length( dtm2 )
 ```
 
-## `POSIXct` Sequence Rounding
+# `POSIXct` Sequence Rounding
 
 ```{r}
 Sys.setenv( TZ="GMT" ) # emulate chron behavior
@@ -127,7 +345,7 @@ tail( dtm3 )   # does include final value
 length( dtm3 ) # one more than cron example
 ```
 
-## `zoo` Package offers `yearmon`/`yrqtr` alternatives
+# `zoo` Package offers `yearmon`/`yrqtr` alternatives
 
 - Intended for long series of monthly data (e.g. financial data)
 
@@ -137,7 +355,7 @@ dt1 <- as.yearmon( c( "2016-03", "2016-04" ) )
 dt1  # automatically formatted for display
 ```
 
-## `zoo` Internal Representation
+# `zoo` Internal Representation
 
 See what R is storing without the automatic formatting:
 
@@ -145,14 +363,14 @@ See what R is storing without the automatic formatting:
 unclass( dt1 )
 ```
 
-## `zoo` Comparison
+# `zoo` Comparison
 
 ```{r}
 dt1[ 1 ] < dt1[ 2 ]
 diff( dt1 ) # displayed nonsensically
 ```
 
-## `zoo` Sequences
+# `zoo` Sequences
 
 Typical to build floating point sequences, then convert to `yearmon` type:
 
@@ -176,4 +394,11 @@ as.numeric( f2a[ length( f2a ) ] ) - as.numeric( f2b[ length( f2b ) ] )
 
 
 ---
-[^1]: https://cran.r-project.org/doc/FAQ/R-FAQ.html#Why-doesn_0027t-R-think-these-numbers-are-equal_003f
+[^1]: M. J. Crawley, _Statistics: an introduction using R_, 1st ed. Chichester, West Sussex, England: J. Wiley, 2005.
+[^2]: G. Grothendieck and T. Petzoldt, “R Help Desk: Date and Time Classes in R,” R News, vol. 4, no. 1, pp. 29–32, Jun-2004 [Online]. Available: https://www.r-project.org/doc/Rnews/Rnews_2004-1.pdf. 
+[^3]: G. Grolemund and H. Wickham, “Dates and Times Made Easy with lubridate,” Journal of Statistical Software, vol. 40, no. 3, pp. 1–25, 2011 [Online]. Available: http://www.jstatsoft.org/v40/i03/
+[^4]: “Dates and times with lubridate :: CHEAT SHEET.” RStudio, Dec-2017 [Online]. Available: https://github.com/rstudio/cheatsheets/raw/master/lubridate.pdf
+[^5]: https://data.london.gov.uk/dataset/smartmeter-energy-use-data-in-london-households
+[^7]: https://cran.r-project.org/doc/FAQ/R-FAQ.html#Why-doesn_0027t-R-think-these-numbers-are-equal_003f
+[^8]: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+
