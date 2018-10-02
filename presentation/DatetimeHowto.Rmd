@@ -3,23 +3,24 @@ title: "Date-Time Howto"
 author: "Jeff Newmiller"
 date: "October 2, 2018"
 output: slidy_presentation
-css: ../css/custom.css
+css: "../css/custom.css"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(fig.height = 4)
+knitr::opts_chunk$set(fig.height = 4, tidy = TRUE)
 suppressPackageStartupMessages( library(dplyr) )
 suppressPackageStartupMessages( library(ggplot2) )
 suppressPackageStartupMessages( library(lubridate) )
+library(DiagrammeR)
 ```
 
 # Date/Time FAQs
 
 Will show examples of fixing common time-related problems:
 
-- Date/Time values make messy plots?
-- Invalid Date/Time values?
-- Handling daylight savings time?
+- Why do Date/Time values sometimes make messy plots?
+- What are invalid Date/Time values?
+- How do we handle daylight savings time?
 - Time in a series of columns?
 - Comparing Dates and Date/Times?
 
@@ -27,10 +28,9 @@ Will show examples of fixing common time-related problems:
 
 Why do the following simple commands make such messy x-axis labeling? And it is slow, too!
 
-```{r}
+```{r, fig.width=4}
 dta <- read.csv( "../data/MAC000002clean.csv" )
-str(dta)
-plot( dta$DateTime, dta$KWH, pch = "." )
+plot( KWH ~ DateTime, data=dta, pch = "." )
 ```
 
 # A: Use `Date` or `POSIXct` for date/time values
@@ -40,12 +40,17 @@ Sys.setenv( TZ = "US/Pacific" )
 ```
 
 ```{r}
-dta <- read.csv( "../data/MAC000002clean.csv", as.is=TRUE ) # avoid auto-convert to factor
-dta$Dtm <- as.POSIXct( dta$DateTime )
-# or just
-# dta <- readr::read_csv( "../data/MAC000002clean.csv" )
-str(dta)
-plot( dta$Dtm, dta$KWH, pch = "." )
+dta <- read.csv( "../data/MAC000002clean.csv"
+               , as.is=TRUE # avoid auto-convert to factor
+               )
+dta$Dtm <- as.POSIXct( dta$DateTime ) # New column
+str( dta )
+```
+
+# A: Use `Date` or `POSIXct` for date/time values
+
+```{r,fig.height=3}
+plot( KWH ~ Dtm, data = dta, pch = "." )
 ```
 
 # Useful Date/Time Data Types in R
@@ -78,6 +83,20 @@ knitr::kable( dtminfo
             )
 ```
 
+# Good Practices
+
+Converting formatted strings to `POSIXct`:
+
+```{r,echo=FALSE,fig.height=3}
+mermaid('
+sequenceDiagram
+  File ->> Character : read.csv(as.is=TRUE)
+  Character ->> NA : as.POSIXct("2013-21-03 02:30:00")
+  Character ->> POSIXct : as.POSIXct("2013-03-10 14:30:00")
+  Character ->> POSIXct : as.POSIXct("3/21/13 2:30pm",format="%m/%d%y %I:%M%p")
+')
+```
+
 # Q: Invalid Date/Time values?
 
 ```{r}
@@ -89,7 +108,7 @@ sum( is.na( dta$DateTime ) )
 
 - Convert to and from character (format/parse)
 - Compare two dates (before, same time, or after?)
-- Quantify interval between two moments in time
+- Calculate interval between two moments in time
 - Create periodic sequences of moments in time
 - Handle calendar/time special cases
 

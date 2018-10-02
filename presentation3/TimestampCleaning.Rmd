@@ -35,7 +35,7 @@ The timestamp column is stored as character data because read.csv does not autom
 Tell R to assume timezone is Greenwich Mean Time (or Universal Time Coordinated = UTC)
 
 ```{r}
-Sys.setenv( TZ = "GMT" ) # when you don't know how the data was coded, use GMT
+Sys.setenv( TZ = "GMT" ) # when you don't know how the data was encoded, use GMT
 ```
 
 Make a `Dtm` column using base R (works without extra packages, but not as convenient)
@@ -140,14 +140,46 @@ str( dta_b3 )
 sum( is.na( dta_b3$KWH ) )
 ```
 
+## Strip Fractional Seconds
+
+```{r}
+sum( ".0000000" != substr( dta_b3$DateTime, 20, 27 ) )
+```
+
+None of the records have anything but zeroes after the decimal point, so chop them off to make converting the timestamp easier.
+
+```{r}
+dta_b4 <- dta_b3
+dta_b4$DateTime <- substr( dta_b4$DateTime, 1, 19 )
+```
 
 ## Save Cleaned Residential Data
 
 ```{r}
-write.csv( dta_b3[ , c( "LCLid", "DateTime", "KWH" ) ]
+write.csv( dta_b4[ , c( "LCLid", "DateTime", "KWH" ) ]
          , file = "../data/MAC000002clean.csv"
          , row.names = FALSE
          , quote = FALSE
          )
 ```
 
+## Save a version encoded with a different Timezone
+
+```{r}
+Sys.setenv( TZ = "US/Pacific" )
+dta_b5 <- dta_b4
+dta_b5$DateTime <- as.character( dta_b5$Dtm ) 
+write.csv( dta_b5[ , c( "LCLid", "DateTime", "KWH" ) ]
+         , file = "../data/MAC000002cleanPT.csv"
+         , row.names = FALSE
+         , quote = FALSE
+         )
+```
+
+## What is `strptime`
+
+To get help on the format argument used by `as.POSIXct`, look up the help page for `?strptime`. This relationship isn't obvious, but:
+
+* The help page for `as.POSIXct` and `as.POSIXlt` mentions `strptime` several times with hyperlinks to its help page.
+* `as.POSIXct` first calls `as.POSIXlt` and then converts that into `POSIXct`. The `as.POSIXlt` function uses `strptime` to convert character data into `POSIXlt` representation.
+* `strptime` is the name of a function from the POSIX standard which "parses" a string to make a (list) time.

@@ -12,7 +12,7 @@ These materials were prepared for a meeting of the East Bay R Beginners Meetup G
 setwd( "presentation" )
 ```
 (or other appropriate directory)
-- Then use the "Files" pane to click on the "presentation" direcotory,
+- Then use the "Files" pane to click on the "presentation" directory,
 - then click on the "DateTimeHowto.Rmd" file in the "Files" pane to open it,
 - Then click the "knit" button at the top of the Editor pane with the "DateTimeHowto.Rmd".
 
