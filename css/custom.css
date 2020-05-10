@@ -2,3 +2,21 @@ code {
   font-family: monospace; 
   background-color: #00000010;
 }
+table {
+  border-collapse: collapse;
+}
+td {
+  border: 1px solid #000;
+}
+tr:nth-child(even) {
+  background-color: #eee;
+}
+tr:nth-child(odd) {
+  background-color: #fff;
+}
+before-column p.forceBreak {
+    break-before: column;
+}
+after-column p.forceBreak {
+    break-after: column;
+}
