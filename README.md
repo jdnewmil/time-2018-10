@@ -39,3 +39,9 @@ setwd( "presentation" )
 ### Too much work?
 
 You can open the Rmarkdown files and read them directly... they are plain text files.
+
+You can also see the presentations online now:
+
+- [DatetimeHowto](https://jdnewmil.github.io/time-2018-10/DatetimeHowto.html)
+- [MoreDatetimeHowto](https://jdnewmil.github.io/time-2018-10/MoreDatetimeHowto.html)
+- [TimestampCleaning](https://jdnewmil.github.io/time-2018-10/TimestampCleaning.html)
