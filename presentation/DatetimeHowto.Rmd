@@ -1,9 +1,21 @@
 ---
 title: "A Brief Date-Time Howto"
 author: "Jeff Newmiller"
-date: "October 2, 2018"
+date: "October 2, 2018 (updated May 10, 2020)"
 output: slidy_presentation
 css: "../css/custom.css"
+knit: (function(input_file, encoding) {
+   out_dir <- 'docs';
+   rmarkdown::render( input_file
+                    , encoding = encoding
+                    , output_file = file.path( dirname(input_file)
+                                             , ".."
+                                             , out_dir
+                                             , 'DatetimeHowto.html'
+                                             )
+                    )
+   })
+
 ---
 
 ```{r setup, include=FALSE}
@@ -69,13 +81,13 @@ Sys.setenv( TZ = "" )
 ```
 
 ```{r faq1Qmessy, fig.width=6,fig.height=3}
-dta <- read.csv( "../data/MAC000002clean.csv" )
+dta <- read.csv( "../data/MAC000002clean.csv", stringsAsFactors = TRUE )
 plot( KWH ~ DateTime, data=dta, pch = "." )
 ```
 
 # A: Because the x-axis is a factor
 
-The `read.csv` function by default looks for floating point, integer, or logical types, and anything else is treated like a factor.
+In versions of R before 4.0.0 the `read.csv` function by default looked for floating point, integer, or logical types, and anything else is treated like a factor. In R 4.0.0 and after, the default is to import unrecognized columns of data as character strings. Plotting character data directly does not work, so an error "NAs introduced by coercion" would appear.
 
 Factors are labels, like "Male" or "Female". The above plot assigns each record its own label, and then "skips" labels to avoid writing them on top of each other.
 
@@ -85,9 +97,11 @@ Timestamp values may look similar to character or factor representations, but th
 
 ```{r faq1Achr}
 dta <- read.csv( "../data/MAC000002clean.csv"
-               , as.is=TRUE # avoid auto-convert to factor
+#               , as.is=TRUE # avoid auto-convert to factor (unnecessary in R4.0..0)
                )
-Sys.setenv( TZ = "US/Pacific" ) # If you forget this, this is the likely default for SFBay Area
+# Simulate YYYY-mm-ddTHH:MM:SS ISO time format
+dta$DateTime <- sub( " ", "T", dta$DateTime )
+Sys.setenv( TZ = "US/Pacific" ) # If you forget TZ, this is the likely default for SFBay Area
 dta$Dtm <- as.POSIXct( dta$DateTime ) # New column
 str( dta )
 ```
@@ -143,6 +157,7 @@ Sys.setenv( TZ = oldtz )
 Converting formatted strings to `POSIXct`:
 
 * Set TZ before converting!
+* Beware of YDM or MDY ordering... they need a format specification
 
 ```{r goodpractice1,echo=FALSE,fig.height=3}
 mermaid('
@@ -179,7 +194,7 @@ Experiment: remove the choice to guess which format to use:
 
 ```{r faq1Aforce}
 dta$Dtm <- as.POSIXct( dta$DateTime
-                     , format = "%Y-%m-%d %H:%M:%S"
+                     , format = "%Y-%m-%dT%H:%M:%S"
                      )
 which( is.na( dta$Dtm ) ) # this may not work on Linux/Mac
 dta[ 7105:7106, ]
@@ -212,7 +227,7 @@ Solution is to tell R what the correct timezone is *before* converting from char
 
 ```{r faq1Agmt}
 Sys.setenv( TZ = "GMT" )
-dta$Dtm <- as.POSIXct( dta$DateTime )
+dta$Dtm <- as.POSIXct( dta$DateTime, format = "%Y-%m-%dT%H:%M:%S" )
 idx <- 7101:7109
 qplot( idx, dta$Dtm[ idx ] )
 ```

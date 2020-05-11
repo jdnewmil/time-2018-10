@@ -3,6 +3,17 @@ title: "More Datetime Howto"
 author: "Jeff Newmiller"
 date: "September 9, 2018"
 output: slidy_presentation
+knit: (function(input_file, encoding) {
+   out_dir <- 'docs';
+   rmarkdown::render( input_file
+                    , encoding = encoding
+                    , output_file = file.path( dirname(input_file)
+                                             , ".."
+                                             , out_dir
+                                             , 'MoreDatetimeHowto.html'
+                                             )
+                    )
+   })
 ---
 
 ```{r setup, include=FALSE}
